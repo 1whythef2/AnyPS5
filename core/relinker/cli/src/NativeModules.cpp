@@ -30,6 +30,7 @@ NativeModules ReadModules(const std::filesystem::path& inputPath, const std::fil
     std::vector<std::filesystem::path> directories;
     if (hasSingular || hasPlural) directories.push_back(hasSingular ? singular : plural);
     if (hasPrx) directories.push_back(prx);
+    const auto standardDirectories = directories;
     std::vector<std::filesystem::path> runtimeDirectories;
     for (const auto& name : moduleDirectories) {
         const auto relative = Io::NativePath(name).lexically_normal();
@@ -61,11 +62,14 @@ NativeModules ReadModules(const std::filesystem::path& inputPath, const std::fil
     };
     for (const auto& directory : directories) {
         if (!std::filesystem::is_directory(directory)) throw Domain::RelinkerException("Guest module path is not a directory: " + Io::Utf8Path(directory));
+        const bool standardDirectory = std::any_of(standardDirectories.begin(), standardDirectories.end(), [&](const auto& standard) { return SameDirectory(directory, standard); });
         for (const auto& entry : std::filesystem::directory_iterator(directory)) {
-            if (Io::Utf8Path(entry.path().filename()).ends_with(GuestModuleSuffix)) continue;
-            if (excludedModules.contains(Io::Utf8Path(entry.path().filename()))) {
+            const auto name = Io::Utf8Path(entry.path().filename());
+            if (!standardDirectory && name.find(".prx") == std::string::npos) continue;
+            if (name.ends_with(GuestModuleSuffix)) continue;
+            if (excludedModules.contains(name)) {
                 hasModuleCandidate = true;
-                unmatchedExclusions.erase(Io::Utf8Path(entry.path().filename()));
+                unmatchedExclusions.erase(name);
                 continue;
             }
             if (!entry.is_regular_file()) continue;
