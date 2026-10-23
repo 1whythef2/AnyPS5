@@ -1,4 +1,5 @@
 #include <NativeModules.hpp>
+#include <domain/ImportModule.hpp>
 #include <io/FileReader.hpp>
 #include <io/NativePath.hpp>
 #include <io/FileIdentity.hpp>
@@ -19,7 +20,7 @@ NativeModules ReadModules(const std::filesystem::path& inputPath, const std::fil
     const auto root = std::filesystem::absolute(sceModulePath).lexically_normal();
     if (!std::filesystem::exists(root)) throw Domain::RelinkerException("Guest module parent directory does not exist: " + Io::Utf8Path(root));
     if (!std::filesystem::is_directory(root)) throw Domain::RelinkerException("Guest module parent path is not a directory: " + Io::Utf8Path(root));
-    const auto missingModuleMessage = std::string(GuestModulePattern) + " was not found in: " + Io::Utf8Path(root) + ". Use --skip-sce-module to disable guest module processing.";
+    const auto missingModuleMessage = "No guest module directory or root PRX was found in: " + Io::Utf8Path(root) + ". Use --skip-sce-module to disable guest module processing.";
     const auto singular = root / "sce_module";
     const auto plural = root / "sce_modules";
     const auto prx = root / "prx";
@@ -27,7 +28,6 @@ NativeModules ReadModules(const std::filesystem::path& inputPath, const std::fil
     const bool hasPlural = std::filesystem::exists(plural);
     const bool hasPrx = std::filesystem::exists(prx);
     if (hasSingular && hasPlural) throw Domain::RelinkerException("Both sce_module and sce_modules exist in the guest module parent directory");
-    if (!hasSingular && !hasPlural && !hasPrx && moduleDirectories.empty()) throw Domain::RelinkerException(missingModuleMessage);
     std::vector<std::filesystem::path> directories;
     if (hasSingular || hasPlural) directories.push_back(hasSingular ? singular : plural);
     if (hasPrx) directories.push_back(prx);
@@ -45,6 +45,20 @@ NativeModules ReadModules(const std::filesystem::path& inputPath, const std::fil
     }
     std::vector<std::filesystem::path> paths;
     std::set<std::string> unmatchedExclusions = excludedModules;
+    bool hasRootModules = false;
+    for (const auto& entry : std::filesystem::directory_iterator(root)) {
+        const auto name = Io::Utf8Path(entry.path().filename());
+        if (name.ends_with(GuestModuleSuffix) || Domain::ModuleSuffix(name).empty()) continue;
+        if (!entry.is_regular_file()) throw Domain::RelinkerException("Root guest module is not a regular file: " + Io::Utf8Path(entry.path()));
+        if (Io::SameFile(entry.path(), inputPath)) continue;
+        hasRootModules = true;
+        if (excludedModules.contains(name)) {
+            unmatchedExclusions.erase(name);
+            continue;
+        }
+        paths.push_back(entry.path());
+    }
+    if (!hasSingular && !hasPlural && !hasPrx && !hasRootModules && moduleDirectories.empty()) throw Domain::RelinkerException(missingModuleMessage);
     const auto isElf = [](const std::filesystem::path& path, bool& self) {
         std::ifstream stream(path, std::ios::binary);
         if (!stream) throw Domain::RelinkerException("Cannot read guest candidate: " + Io::Utf8Path(path));
@@ -58,7 +72,9 @@ NativeModules ReadModules(const std::filesystem::path& inputPath, const std::fil
     };
     for (const auto& directory : directories) {
         if (!std::filesystem::is_directory(directory)) throw Domain::RelinkerException("Guest module path is not a directory: " + Io::Utf8Path(directory));
+        const bool isRoot = SameDirectory(directory, root);
         for (const auto& entry : std::filesystem::directory_iterator(directory)) {
+            if (isRoot && !Domain::ModuleSuffix(Io::Utf8Path(entry.path().filename())).empty()) continue;
             if (Io::Utf8Path(entry.path().filename()).ends_with(GuestModuleSuffix)) continue;
             if (excludedModules.contains(Io::Utf8Path(entry.path().filename()))) {
                 unmatchedExclusions.erase(Io::Utf8Path(entry.path().filename()));
@@ -88,6 +104,7 @@ NativeModules ReadModules(const std::filesystem::path& inputPath, const std::fil
     std::vector<bool> copies(result.Modules.size());
     for (std::size_t copy = 0; copy < result.Modules.size(); ++copy) {
         const auto& path = result.Modules[copy].Path;
+        if (SameDirectory(path.parent_path(), root)) continue;
         const auto name = Io::Utf8Path(path.filename());
         for (std::size_t original = 0; original < result.Modules.size(); ++original) {
             const auto& kept = result.Modules[original].Path;
