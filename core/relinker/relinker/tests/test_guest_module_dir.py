@@ -141,14 +141,29 @@ def main():
                 module = modules / "plugin.prx"
                 original = bytes(module_with_symbol(True))
                 module.write_bytes(original)
+                ignored = {}
+                if relative == ".":
+                    for name in ("previous.elf", "output.plugin.prx.guest.prx.needed.json"):
+                        path = case / name
+                        ignored[path] = bytes(main_fixture())
+                        path.write_bytes(ignored[path])
+                    (case / ("output.exe" if windows else "output.elf")).write_bytes(main_fixture())
                 result, output = convert(case, windows, [], standard=False)
-                assert result.returncode == 2 and "was not found" in result.stderr, result.stderr
-                assert not output.exists()
+                if relative == ".":
+                    assert result.returncode == 0, (result.stdout, result.stderr)
+                    artifact = case / "app0" / "plugin.prx.guest.prx"
+                    assert artifact.read_bytes().startswith(b"MZ" if windows else b"\x7fELF")
+                    assert list((case / "app0").rglob("*.guest.prx")) == [artifact]
+                else:
+                    assert result.returncode == 2 and "was not found" in result.stderr, result.stderr
+                    assert not output.exists()
                 result, output = convert(case, windows, ["--module-dir", relative], standard=False)
                 assert result.returncode == 0, (result.stdout, result.stderr)
                 artifact = case / "app0" / relative / "plugin.prx.guest.prx"
                 assert artifact.read_bytes().startswith(b"MZ" if windows else b"\x7fELF")
                 assert module.read_bytes() == original
+                for path, contents in ignored.items():
+                    assert path.read_bytes() == contents, path
                 assert not (case / "sce_module").exists()
                 for invalid in ("missing", "../outside"):
                     failed, _ = convert(case, windows, ["--module-dir", invalid], standard=False)
@@ -233,7 +248,7 @@ def main():
             assert result.returncode == 0, (result.stdout, result.stderr)
             needed = case / "app0" / "needed.prx.guest.prx"
             if windows:
-                assert "__aps5_guest_initialize" in pe_export_names(needed.read_bytes())
+                assert "__aps5_guest_initialize" not in pe_export_names(needed.read_bytes())
             else:
                 assert "$ORIGIN/app0/needed.prx.guest.prx" in needed_libraries(output.read_bytes()), needed_libraries(output.read_bytes())
 

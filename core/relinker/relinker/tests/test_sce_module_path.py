@@ -20,7 +20,7 @@ def main():
         (modules / "needed.prx").write_bytes(guest_fixture(PLAIN_SITE))
         (work / "sce_module").write_text("must not inspect the working directory when a path is supplied")
 
-        def run(label, options, cwd=work, error=None, artifact=False):
+        def run(label, options, cwd=work, error=None, artifact=False, root_artifact=False):
             output = work / label / "test.exe"
             output.parent.mkdir()
             result = subprocess.run([str(relinker), str(source), str(output), "--windows", *options], cwd=cwd, capture_output=True, text=True, timeout=30)
@@ -31,6 +31,7 @@ def main():
                 assert result.returncode == 0, (label, result.stdout, result.stderr)
                 assert output.is_file(), label
                 assert (output.parent / "app0/sce_module/needed.prx.guest.prx").exists() == artifact, label
+                assert (output.parent / "app0/needed.prx.guest.prx").exists() == root_artifact, label
 
         run("absolute", ["--sce-module-path", str(parent)], artifact=True)
         run("relative", ["--sce-module-path", "module root"], artifact=True)
@@ -50,7 +51,7 @@ def main():
         run("option-as-value", ["--sce-module-path", "--skip-sce-module"], error="requires a nonempty path")
         run("missing-parent", ["--sce-module-path", "absent"], error="parent directory does not exist")
         run("file-parent", ["--sce-module-path", str(source)], error="parent path is not a directory")
-        run("wrong-level", ["--sce-module-path", str(modules)], error="--skip-sce-module")
+        run("direct-module-root", ["--sce-module-path", str(modules)], root_artifact=True)
         run("module-directory-is-file", ["--sce-module-path", "."], error="Guest module path is not a directory")
         (parent / "sce_modules").mkdir()
         run("ambiguous", ["--sce-module-path", str(parent)], error="Both sce_module and sce_modules")

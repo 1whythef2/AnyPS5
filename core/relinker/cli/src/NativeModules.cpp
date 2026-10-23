@@ -66,7 +66,7 @@ NativeModules ReadModules(const std::filesystem::path& inputPath, const std::fil
         for (const auto& entry : std::filesystem::directory_iterator(directory)) {
             const auto name = Io::Utf8Path(entry.path().filename());
             if (!standardDirectory && name.find(".prx") == std::string::npos) continue;
-            if (name.ends_with(GuestModuleSuffix)) continue;
+            if (name.find(GuestModuleSuffix) != std::string::npos) continue;
             if (excludedModules.contains(name)) {
                 hasModuleCandidate = true;
                 unmatchedExclusions.erase(name);

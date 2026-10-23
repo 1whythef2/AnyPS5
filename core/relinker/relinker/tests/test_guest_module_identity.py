@@ -92,19 +92,27 @@ def main():
                     result, output = convert(f'outside-{windows}-{directory.replace("/", "-")}-{suffix}', windows,
                         'libGuest.suprx', module_directory=directory, guest_request='libGuest.suprx',
                         providers={relative.name: declared_provider(22, ('libGuest',))},
-                        extra={'unused.prx': declared_provider(77, ('libUnused',)), 'opaque.sprx': b'not an ELF'})
+                        extra={'unused.prx': declared_provider(77, ('libUnused',), symbol='unused'), 'opaque.sprx': b'not an ELF'})
                     assert result.returncode == 0, result.stderr
                     artifact = output.parent / 'app0' / (relative.as_posix() + '.guest.prx')
-                    assert not artifact.exists(), artifact
-                    assert len(list((output.parent / 'app0').rglob('*.guest.prx'))) == 1
+                    root_module = directory == '.' and suffix == '.prx'
+                    assert artifact.exists() == root_module, artifact
+                    assert (output.parent / 'app0/unused.prx.guest.prx').is_file()
+                    assert len(list((output.parent / 'app0').rglob('*.guest.prx'))) == (3 if root_module else 2)
                     if not windows:
-                        assert 'libGuest.prx' in needed_libraries(output.read_bytes())
+                        needed = needed_libraries(output.read_bytes())
+                        assert ('libGuest.prx' in needed) == (not root_module), needed
+                        assert ('$ORIGIN/app0/renamed.prx.guest.prx' in needed) == root_module, needed
+                    elif root_module:
+                        run(output)
 
             result, output = convert(f'outside-ambiguous-{windows}', windows, 'libGuest.suprx', module_directory='.',
                 providers={'one.prx': declared_provider(22, ('libGuest',))},
                 extra={'other/two.prx': declared_provider(33, ('libGuest',))})
             assert result.returncode == 0, result.stderr
-            assert not list((output.parent / 'app0').rglob('*.guest.prx'))
+            assert list((output.parent / 'app0').rglob('*.guest.prx')) == [output.parent / 'app0/one.prx.guest.prx']
+            if windows:
+                run(output)
 
             result, output = convert(f'sce-strings-{windows}', windows, 'libGuest.suprx', module_directory='sce_module',
                 providers={'renamed.prx': sce_strings(declared_provider(22, ('libGuest',)))})
@@ -116,7 +124,7 @@ def main():
                 filename = 'physical.prx' if soname else 'libGuest.suprx'
                 result, output = convert(f'known-before-outside-{windows}-{soname}', windows, 'libGuest.suprx',
                     providers={filename: declared_provider(22, ('unrelated',), 'libGuest.suprx' if soname else None)},
-                    extra={'renamed.prx': declared_provider(11, ('libGuest',))})
+                    extra={'other/renamed.prx': declared_provider(11, ('libGuest',))})
                 assert result.returncode == 0, result.stderr
                 assert len(list((output.parent / 'app0').rglob('*.guest.prx'))) == 1
                 if windows:
@@ -139,7 +147,7 @@ def main():
             unrelated = declared_provider(77, ('libUnused',))
             struct.pack_into('<qQ', unrelated, 0x600 + 5 * 16, 0x70000000, 0)
             result, output = convert(f'ignored-unrelated-unsupported-body-{windows}', windows, 'libGuest.suprx',
-                module_directory='sce_module', extra={'unused.prx': unrelated})
+                module_directory='sce_module', extra={'other/unused.prx': unrelated})
             assert result.returncode == 0, result.stderr
             assert len(list((output.parent / 'app0').rglob('*.guest.prx'))) == 1
             if windows:
