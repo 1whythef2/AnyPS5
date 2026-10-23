@@ -45,6 +45,7 @@ NativeModules ReadModules(const std::filesystem::path& inputPath, const std::fil
     const bool hasModuleDirectory = !directories.empty();
     if (std::none_of(directories.begin(), directories.end(), [&](const auto& directory) { return SameDirectory(directory, root); })) directories.push_back(root);
     std::vector<std::filesystem::path> paths;
+    std::vector<std::filesystem::path> selfPaths;
     std::set<std::string> unmatchedExclusions = excludedModules;
     bool hasModuleCandidate = false;
     const auto isElf = [](const std::filesystem::path& path, bool& self) {
@@ -75,8 +76,7 @@ NativeModules ReadModules(const std::filesystem::path& inputPath, const std::fil
                 paths.push_back(entry.path());
             } else if (self) {
                 hasModuleCandidate = true;
-                std::cout << "Skipping SELF container: " << entry.path().lexically_relative(root).generic_string()
-                          << " (unwrap it before relinking)\n";
+                selfPaths.push_back(entry.path());
             }
         }
     }
@@ -112,6 +112,17 @@ NativeModules ReadModules(const std::filesystem::path& inputPath, const std::fil
     for (std::size_t index = 0; index < result.Modules.size(); ++index)
         if (!copies[index]) modules.push_back(std::move(result.Modules[index]));
     result.Modules = std::move(modules);
+    for (const auto& path : selfPaths) {
+        const auto prefix = Io::Utf8Path(path.stem());
+        const auto matches = [&](const std::filesystem::path& accepted) {
+            return Io::Utf8Path(accepted.filename()).starts_with(prefix) && SameDirectory(accepted.parent_path(), path.parent_path());
+        };
+        std::size_t count = matches(inputPath) ? 1 : 0;
+        for (const auto& module : result.Modules) {
+            if (matches(module.Path)) ++count;
+        }
+        if (count != 1) std::cout << "Skipping SELF container: " << path.lexically_relative(root).generic_string() << " (unwrap it before relinking)\n";
+    }
     return result;
 }
 
