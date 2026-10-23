@@ -155,7 +155,7 @@ def main():
                     assert artifact.read_bytes().startswith(b"MZ" if windows else b"\x7fELF")
                     assert list((case / "app0").rglob("*.guest.prx")) == [artifact]
                 else:
-                    assert result.returncode == 2 and "was not found" in result.stderr, result.stderr
+                    assert result.returncode == 2 and "No guest module directory or root PRX was found" in result.stderr, result.stderr
                     assert not output.exists()
                 result, output = convert(case, windows, ["--module-dir", relative], standard=False)
                 assert result.returncode == 0, (result.stdout, result.stderr)
